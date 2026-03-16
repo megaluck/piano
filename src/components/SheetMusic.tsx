@@ -98,7 +98,7 @@ const SheetMusic: React.FC<SheetMusicProps> = ({ activeNotes }) => {
       } else if (uniqueNotes.length === 1) {
         return `${uniqueNotes[0]}/q`; // Quarter note
       } else {
-        return `(${uniqueNotes.join(' ')}\)/q`; // Chord
+        return `(${uniqueNotes.join(' ')})/q`; // Chord
       }
     };
 
@@ -137,14 +137,14 @@ const SheetMusic: React.FC<SheetMusicProps> = ({ activeNotes }) => {
       // Draw everything
       vf.draw();
 
-      // Apply dark theme styles to SVG elements
+      // Apply light theme styles to SVG elements
       const svg = containerRef.current.querySelector('svg');
       if (svg) {
         svg.style.background = 'transparent';
         const elements = svg.querySelectorAll('path, ellipse, rect');
         elements.forEach((el) => {
-          (el as HTMLElement).style.fill = '#f1f5f9'; // slate-100
-          (el as HTMLElement).style.stroke = '#f1f5f9';
+          (el as HTMLElement).style.fill = '#000000'; // black
+          (el as HTMLElement).style.stroke = '#000000';
         });
       }
     } catch (err) {
@@ -153,7 +153,7 @@ const SheetMusic: React.FC<SheetMusicProps> = ({ activeNotes }) => {
   }, [history]);
 
   return (
-    <div className="w-full flex justify-center bg-slate-900/50 rounded-2xl border border-slate-700/50 p-4 overflow-hidden shadow-inner">
+    <div className="w-full flex justify-center bg-white rounded-2xl border border-slate-200 p-4 overflow-hidden shadow-inner">
       <div ref={containerRef} className="vexflow-container" />
     </div>
   );
