@@ -20,6 +20,10 @@ export const useAudioProcessor = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [volumeLevel, setVolumeLevel] = useState(0);
 
+  // Device Selection State
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+
   const audioContextRef = useRef<AudioContext | null>(null);
   const basicPitchRef = useRef<BasicPitch | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -27,6 +31,33 @@ export const useAudioProcessor = () => {
   const sustainedNotesRef = useRef<Set<string>>(new Set());
   const virtualNotesRef = useRef<Set<string>>(new Set());
   const virtualNoteStartTimesRef = useRef<Record<number, number>>({});
+
+  // Fetch available audio devices
+  useEffect(() => {
+    const fetchDevices = async () => {
+      try {
+        const allDevices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputDevices = allDevices.filter(device => device.kind === 'audioinput');
+        setDevices(audioInputDevices);
+        if (audioInputDevices.length > 0 && !selectedDeviceId) {
+          setSelectedDeviceId(audioInputDevices[0].deviceId);
+        }
+      } catch (err) {
+        console.error('Error fetching devices:', err);
+      }
+    };
+
+    // Ask for permission first to get the device labels
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => {
+        stream.getTracks().forEach(track => track.stop());
+        fetchDevices();
+      })
+      .catch(() => fetchDevices()); // Fallback if permission denied initially
+
+    navigator.mediaDevices.addEventListener('devicechange', fetchDevices);
+    return () => navigator.mediaDevices.removeEventListener('devicechange', fetchDevices);
+  }, [selectedDeviceId]);
 
   // Load the model on mount
   useEffect(() => {
@@ -151,7 +182,11 @@ export const useAudioProcessor = () => {
       const audioContext = new AudioContext({ sampleRate: 22050 });
       audioContextRef.current = audioContext;
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const constraints = {
+        audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
 
       const source = audioContext.createMediaStreamSource(stream);
@@ -260,7 +295,7 @@ export const useAudioProcessor = () => {
       }
       setIsActive(false);
     }
-  }, [isActive, isSustainEnabled, isRecording]);
+  }, [isActive, isSustainEnabled, isRecording, selectedDeviceId]);
 
   return {
     isActive,
@@ -280,6 +315,9 @@ export const useAudioProcessor = () => {
     startVirtualNote,
     stopVirtualNote,
     clearAllVirtualNotes,
-    audioContext: audioContextRef.current
+    audioContext: audioContextRef.current,
+    devices,
+    selectedDeviceId,
+    setSelectedDeviceId
   };
 };

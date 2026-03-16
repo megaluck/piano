@@ -32,7 +32,10 @@ const App: React.FC = () => {
     volumeLevel,
     startVirtualNote,
     stopVirtualNote,
-    audioContext
+    audioContext,
+    devices,
+    selectedDeviceId,
+    setSelectedDeviceId
   } = useAudioProcessor();
 
   const formatDisplay = (text: string) => {
@@ -140,6 +143,30 @@ const App: React.FC = () => {
         <div className="space-y-6">
           <div className="bg-slate-800 rounded-3xl shadow-2xl p-6 border border-slate-700 h-full flex flex-col gap-6">
             
+            {/* Microphone Selection */}
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Input Source</label>
+              <select 
+                className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-300 focus:outline-none focus:border-emerald-500 transition-colors"
+                value={selectedDeviceId}
+                onChange={(e) => setSelectedDeviceId(e.target.value)}
+                disabled={isActive}
+              >
+                {devices.length === 0 ? (
+                  <option value="">Default Microphone</option>
+                ) : (
+                  devices.map(device => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label || `Microphone ${devices.indexOf(device) + 1}`}
+                    </option>
+                  ))
+                )}
+              </select>
+              {isActive && devices.length > 1 && (
+                <p className="text-[10px] text-slate-500 px-1 italic">Stop engine to change input source</p>
+              )}
+            </div>
+
             {/* Main Toggle with Volume Meter */}
             <div className="flex flex-col gap-2">
               <button
