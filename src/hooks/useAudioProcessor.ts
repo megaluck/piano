@@ -251,7 +251,13 @@ export const useAudioProcessor = () => {
 
     } catch (err) {
       console.error('Error starting audio detection:', err);
-      setError('Microphone access denied.');
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      
+      if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+         setError('Microphone access blocked: Browsers require HTTPS to use the mic over a network.');
+      } else {
+         setError(`Engine failed to start: ${errorMessage}`);
+      }
       setIsActive(false);
     }
   }, [isActive, isSustainEnabled, isRecording]);
