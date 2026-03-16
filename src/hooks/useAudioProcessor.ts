@@ -31,6 +31,7 @@ export const useAudioProcessor = () => {
   const sustainedNotesRef = useRef<Set<string>>(new Set());
   const virtualNotesRef = useRef<Set<string>>(new Set());
   const virtualNoteStartTimesRef = useRef<Record<number, number>>({});
+  const isEvaluatingRef = useRef<boolean>(false);
 
   // Fetch available audio devices
   useEffect(() => {
@@ -240,6 +241,13 @@ export const useAudioProcessor = () => {
         audioBufferPool.push(new Float32Array(inputData));
 
         if (audioBufferPool.length >= poolLimit) {
+          if (isEvaluatingRef.current) {
+            // Drop frames to prevent massive backlog and UI freezing
+            audioBufferPool = [];
+            return;
+          }
+          isEvaluatingRef.current = true;
+
           const currentPool = [...audioBufferPool];
           audioBufferPool = [];
 
@@ -255,55 +263,61 @@ export const useAudioProcessor = () => {
           audioBuffer.copyToChannel(combinedBuffer, 0);
 
           if (basicPitchRef.current) {
-            const frames: number[][] = [];
-            const onsets: number[][] = [];
-            const contours: number[][] = [];
+            try {
+              const frames: number[][] = [];
+              const onsets: number[][] = [];
+              const contours: number[][] = [];
 
-            await basicPitchRef.current.evaluateModel(
-              audioBuffer,
-              (f, o, c) => {
-                frames.push(...f);
-                onsets.push(...o);
-                contours.push(...c);
-              },
-              () => {}
-            );
+              await basicPitchRef.current.evaluateModel(
+                audioBuffer,
+                (f, o, c) => {
+                  frames.push(...f);
+                  onsets.push(...o);
+                  contours.push(...c);
+                },
+                () => {}
+              );
 
-            const projectedNotes = outputToNotesPoly(frames, onsets, 0.25, 0.25, 5);
-            const timeNotes = noteFramesToTime(projectedNotes);
-            
-            const currentMidis = [...new Set(timeNotes.map(n => Math.round(n.pitchMidi)))];
-            const currentNoteNames = currentMidis.map(midiToNoteName);
-
-            // Sustain Logic
-            if (isSustainEnabled) {
-              currentNoteNames.forEach(n => sustainedNotesRef.current.add(n));
-            } else {
-              sustainedNotesRef.current.clear();
-            }
-
-            const finalNotesToShow = [...new Set([
-              ...currentNoteNames, 
-              ...Array.from(sustainedNotesRef.current),
-              ...Array.from(virtualNotesRef.current)
-            ])];
-            
-            setActiveNotes(finalNotesToShow);
-            setDetectedChord(detectChord(finalNotesToShow));
-
-            // Recording Logic
-            if (isRecording) {
-              const sessionRelativeTime = audioContext.currentTime - sessionStartTime;
-              const newRecordedNotes: RecordedNote[] = timeNotes.map(n => ({
-                pitchMidi: Math.round(n.pitchMidi),
-                startTimeSeconds: n.startTimeSeconds + sessionRelativeTime,
-                durationSeconds: n.durationSeconds,
-                velocity: 0.8
-              }));
+              const projectedNotes = outputToNotesPoly(frames, onsets, 0.25, 0.25, 5);
+              const timeNotes = noteFramesToTime(projectedNotes);
               
-              setRecordedNotes(prev => [...prev, ...newRecordedNotes]);
-              setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
+              const currentMidis = [...new Set(timeNotes.map(n => Math.round(n.pitchMidi)))];
+              const currentNoteNames = currentMidis.map(midiToNoteName);
+
+              // Sustain Logic
+              if (isSustainEnabled) {
+                currentNoteNames.forEach(n => sustainedNotesRef.current.add(n));
+              } else {
+                sustainedNotesRef.current.clear();
+              }
+
+              const finalNotesToShow = [...new Set([
+                ...currentNoteNames, 
+                ...Array.from(sustainedNotesRef.current),
+                ...Array.from(virtualNotesRef.current)
+              ])];
+              
+              setActiveNotes(finalNotesToShow);
+              setDetectedChord(detectChord(finalNotesToShow));
+
+              // Recording Logic
+              if (isRecording) {
+                const sessionRelativeTime = audioContext.currentTime - sessionStartTime;
+                const newRecordedNotes: RecordedNote[] = timeNotes.map(n => ({
+                  pitchMidi: Math.round(n.pitchMidi),
+                  startTimeSeconds: n.startTimeSeconds + sessionRelativeTime,
+                  durationSeconds: n.durationSeconds,
+                  velocity: 0.8
+                }));
+                
+                setRecordedNotes(prev => [...prev, ...newRecordedNotes]);
+                setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
+              }
+            } finally {
+              isEvaluatingRef.current = false;
             }
+          } else {
+            isEvaluatingRef.current = false;
           }
         }
       };
