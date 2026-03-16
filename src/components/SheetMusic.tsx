@@ -16,10 +16,21 @@ const SheetMusic: React.FC<SheetMusicProps> = ({ activeNotes }) => {
   const [history, setHistory] = useState<NoteEvent[]>([]);
 
   // 1. Group active notes into history events
+  // Use a stringified key to avoid reference-based re-renders from the AI loop
+  const activeNotesKey = [...activeNotes].sort().join(',');
+
   useEffect(() => {
     if (activeNotes.length > 0) {
       const timer = setTimeout(() => {
         setHistory(prev => {
+          const lastEvent = prev[prev.length - 1];
+          const lastKey = lastEvent ? [...lastEvent.notes].sort().join(',') : '';
+
+          // Do not push a new event if the exact same notes are already the last entry
+          if (activeNotesKey === lastKey) {
+            return prev;
+          }
+
           const newHistory = [...prev];
           newHistory.push({ notes: activeNotes, timestamp: Date.now() });
           
@@ -32,7 +43,7 @@ const SheetMusic: React.FC<SheetMusicProps> = ({ activeNotes }) => {
       }, 150); // 150ms window to roll a chord
       return () => clearTimeout(timer);
     }
-  }, [activeNotes]);
+  }, [activeNotesKey]); // Rely on the string key, not the array reference
 
   // 2. Expire old events after 20 seconds
   useEffect(() => {
