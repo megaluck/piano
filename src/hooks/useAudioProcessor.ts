@@ -278,7 +278,11 @@ export const useAudioProcessor = () => {
                 () => {}
               );
 
-              const projectedNotes = outputToNotesPoly(frames, onsets, 0.25, 0.25, 5);
+              // Increased thresholds:
+              // onset_thresh (0.6): requires a stronger attack
+              // frame_thresh (0.4): requires a stronger sustained note
+              // min_note_len (10): filters out very short anomalous blips
+              const projectedNotes = outputToNotesPoly(frames, onsets, 0.6, 0.4, 10);
               const timeNotes = noteFramesToTime(projectedNotes);
               
               const currentMidis = [...new Set(timeNotes.map(n => Math.round(n.pitchMidi)))];
