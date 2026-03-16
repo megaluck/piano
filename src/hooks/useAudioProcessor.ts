@@ -234,7 +234,7 @@ export const useAudioProcessor = () => {
       const sessionStartTime = audioContext.currentTime;
 
       let audioBufferPool: Float32Array[] = [];
-      const poolLimit = 4; // ~370ms latency at 2048 buffer size. Bare minimum for Basic Pitch to detect a wave.
+      const poolLimit = 2; // ~185ms latency at 2048 buffer size. Faster response.
 
       processor.onaudioprocess = async (e) => {
         if (!streamRef.current) return;
@@ -280,11 +280,11 @@ export const useAudioProcessor = () => {
                 () => {}
               );
 
-              // Increased thresholds:
-              // onset_thresh (0.6): requires a stronger attack
-              // frame_thresh (0.4): requires a stronger sustained note
-              // min_note_len (10): filters out very short anomalous blips
-              const projectedNotes = outputToNotesPoly(frames, onsets, 0.6, 0.4, 10);
+              // thresholds:
+              // onset_thresh (0.5): slightly relaxed attack requirement
+              // frame_thresh (0.3): allows slightly quieter sustained notes
+              // min_note_len (5): allows shorter minimum note length to catch fast inputs
+              const projectedNotes = outputToNotesPoly(frames, onsets, 0.5, 0.3, 5);
               const timeNotes = noteFramesToTime(projectedNotes);
               
               const currentMidis = [...new Set(timeNotes.map(n => Math.round(n.pitchMidi)))];
