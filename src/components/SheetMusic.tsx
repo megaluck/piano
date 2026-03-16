@@ -14,36 +14,35 @@ interface NoteEvent {
 const SheetMusic: React.FC<SheetMusicProps> = ({ activeNotes }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [history, setHistory] = useState<NoteEvent[]>([]);
+  const lastNotesRef = useRef<string>('');
 
   // 1. Group active notes into history events
   // Use a stringified key to avoid reference-based re-renders from the AI loop
   const activeNotesKey = [...activeNotes].sort().join(',');
 
   useEffect(() => {
-    if (activeNotes.length > 0) {
-      const timer = setTimeout(() => {
-        setHistory(prev => {
-          const lastEvent = prev[prev.length - 1];
-          const lastKey = lastEvent ? [...lastEvent.notes].sort().join(',') : '';
+    // If the currently playing notes are different from the last state we processed
+    if (activeNotesKey !== lastNotesRef.current) {
+      lastNotesRef.current = activeNotesKey;
 
-          // Do not push a new event if the exact same notes are already the last entry
-          if (activeNotesKey === lastKey) {
-            return prev;
-          }
-
-          const newHistory = [...prev];
-          newHistory.push({ notes: activeNotes, timestamp: Date.now() });
-          
-          // Keep only last 8 events so it doesn't overflow the 500px stave
-          if (newHistory.length > 8) {
-            newHistory.shift();
-          }
-          return newHistory;
-        });
-      }, 150); // 150ms window to roll a chord
-      return () => clearTimeout(timer);
+      // Only add to sheet music history if it's an actual note (ignore silence)
+      if (activeNotes.length > 0) {
+        const timer = setTimeout(() => {
+          setHistory(prev => {
+            const newHistory = [...prev];
+            newHistory.push({ notes: activeNotes, timestamp: Date.now() });
+            
+            // Keep only last 8 events so it doesn't overflow the 500px stave
+            if (newHistory.length > 8) {
+              newHistory.shift();
+            }
+            return newHistory;
+          });
+        }, 50); // Small debounce to allow chord notes to arrive together
+        return () => clearTimeout(timer);
+      }
     }
-  }, [activeNotesKey]); // Rely on the string key, not the array reference
+  }, [activeNotes, activeNotesKey]); // Depend on both to get the actual array values
 
   // 2. Expire old events after 20 seconds
   useEffect(() => {
