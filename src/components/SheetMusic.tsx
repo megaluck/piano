@@ -14,35 +14,55 @@ interface NoteEvent {
 const SheetMusic: React.FC<SheetMusicProps> = ({ activeNotes }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [history, setHistory] = useState<NoteEvent[]>([]);
-  const lastNotesRef = useRef<string>('');
+  
+  // Track the last actual non-empty note/chord that was added to the sheet
+  const lastDrawnNotesRef = useRef<string>('');
+  
+  // Track the immediate previous state to detect silence transitions
+  const immediateLastStateRef = useRef<string>('');
 
   // 1. Group active notes into history events
-  // Use a stringified key to avoid reference-based re-renders from the AI loop
   const activeNotesKey = [...activeNotes].sort().join(',');
 
   useEffect(() => {
-    // If the currently playing notes are different from the last state we processed
-    if (activeNotesKey !== lastNotesRef.current) {
-      lastNotesRef.current = activeNotesKey;
-
-      // Only add to sheet music history if it's an actual note (ignore silence)
-      if (activeNotes.length > 0) {
-        const timer = setTimeout(() => {
-          setHistory(prev => {
-            const newHistory = [...prev];
-            newHistory.push({ notes: activeNotes, timestamp: Date.now() });
+    // If the state has completely changed
+    if (activeNotesKey !== immediateLastStateRef.current) {
+      
+      // If the current state is silence, update our tracking to allow new notes to trigger
+      if (activeNotes.length === 0) {
+        immediateLastStateRef.current = '';
+        lastDrawnNotesRef.current = ''; // Clear the "gate" allowing the same note to be drawn again
+      } 
+      // If we have actual notes playing
+      else if (activeNotes.length > 0) {
+        
+        // Only draw if these notes are DIFFERENT from the last ones we explicitly drew
+        // This means we require a full silence reset before drawing the exact same chord again
+        if (activeNotesKey !== lastDrawnNotesRef.current) {
+          
+          const timer = setTimeout(() => {
+            // Confirm the notes haven't changed during the debounce window
+            lastDrawnNotesRef.current = activeNotesKey;
             
-            // Keep only last 8 events so it doesn't overflow the 500px stave
-            if (newHistory.length > 8) {
-              newHistory.shift();
-            }
-            return newHistory;
-          });
-        }, 50); // Small debounce to allow chord notes to arrive together
-        return () => clearTimeout(timer);
+            setHistory(prev => {
+              const newHistory = [...prev];
+              newHistory.push({ notes: activeNotes, timestamp: Date.now() });
+              
+              if (newHistory.length > 8) {
+                newHistory.shift();
+              }
+              return newHistory;
+            });
+          }, 50); // Small debounce to allow chord notes to arrive together
+          
+          immediateLastStateRef.current = activeNotesKey;
+          return () => clearTimeout(timer);
+        }
       }
+      
+      immediateLastStateRef.current = activeNotesKey;
     }
-  }, [activeNotes, activeNotesKey]); // Depend on both to get the actual array values
+  }, [activeNotes, activeNotesKey]); 
 
   // 2. Expire old events after 20 seconds
   useEffect(() => {
