@@ -218,7 +218,7 @@ export const useAudioProcessor = () => {
       };
       updateVolume();
 
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      const processor = audioContext.createScriptProcessor(2048, 1, 1);
       
       // Prevent feedback loop by connecting to a muted GainNode instead of destination
       const dummyGain = audioContext.createGain();
@@ -232,7 +232,7 @@ export const useAudioProcessor = () => {
       const sessionStartTime = audioContext.currentTime;
 
       let audioBufferPool: Float32Array[] = [];
-      const poolLimit = 8; // Faster response (~1.5s)
+      const poolLimit = 2; // ~200ms latency at 2048 buffer size and 22050 sample rate
 
       processor.onaudioprocess = async (e) => {
         if (!streamRef.current) return;
