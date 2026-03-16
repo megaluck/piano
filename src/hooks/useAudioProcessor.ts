@@ -218,7 +218,7 @@ export const useAudioProcessor = () => {
       };
       updateVolume();
 
-      const processor = audioContext.createScriptProcessor(2048, 1, 1);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
       
       // Prevent feedback loop by connecting to a muted GainNode instead of destination
       const dummyGain = audioContext.createGain();
@@ -231,98 +231,74 @@ export const useAudioProcessor = () => {
       setIsActive(true);
       const sessionStartTime = audioContext.currentTime;
 
-      let audioBufferPool: Float32Array[] = [];
-      const poolLimit = 2; // ~200ms latency at 2048 buffer size and 22050 sample rate
-
       processor.onaudioprocess = async (e) => {
         if (!streamRef.current) return;
+        if (isEvaluatingRef.current) return; // Drop frame if AI is still thinking
+        isEvaluatingRef.current = true;
         
-        const inputData = e.inputBuffer.getChannelData(0);
-        audioBufferPool.push(new Float32Array(inputData));
-
-        if (audioBufferPool.length >= poolLimit) {
-          if (isEvaluatingRef.current) {
-            // Drop frames to prevent massive backlog and UI freezing
-            audioBufferPool = [];
-            return;
-          }
-          isEvaluatingRef.current = true;
-
-          const currentPool = [...audioBufferPool];
-          audioBufferPool = [];
-
-          const totalLength = currentPool.reduce((acc, b) => acc + b.length, 0);
-          const combinedBuffer = new Float32Array(totalLength);
-          let offset = 0;
-          for (const b of currentPool) {
-            combinedBuffer.set(b, offset);
-            offset += b.length;
-          }
-
-          const audioBuffer = audioContext.createBuffer(1, combinedBuffer.length, audioContext.sampleRate);
-          audioBuffer.copyToChannel(combinedBuffer, 0);
+        try {
+          const inputData = e.inputBuffer.getChannelData(0);
+          
+          const audioBuffer = audioContext.createBuffer(1, inputData.length, audioContext.sampleRate);
+          audioBuffer.copyToChannel(inputData, 0);
 
           if (basicPitchRef.current) {
-            try {
-              const frames: number[][] = [];
-              const onsets: number[][] = [];
-              const contours: number[][] = [];
+            const frames: number[][] = [];
+            const onsets: number[][] = [];
+            const contours: number[][] = [];
 
-              await basicPitchRef.current.evaluateModel(
-                audioBuffer,
-                (f, o, c) => {
-                  frames.push(...f);
-                  onsets.push(...o);
-                  contours.push(...c);
-                },
-                () => {}
-              );
+            await basicPitchRef.current.evaluateModel(
+              audioBuffer,
+              (f, o, c) => {
+                frames.push(...f);
+                onsets.push(...o);
+                contours.push(...c);
+              },
+              () => {}
+            );
 
-              // Increased thresholds:
-              // onset_thresh (0.6): requires a stronger attack
-              // frame_thresh (0.4): requires a stronger sustained note
-              // min_note_len (10): filters out very short anomalous blips
-              const projectedNotes = outputToNotesPoly(frames, onsets, 0.6, 0.4, 10);
-              const timeNotes = noteFramesToTime(projectedNotes);
-              
-              const currentMidis = [...new Set(timeNotes.map(n => Math.round(n.pitchMidi)))];
-              const currentNoteNames = currentMidis.map(midiToNoteName);
+            // Increased thresholds:
+            // onset_thresh (0.6): requires a stronger attack
+            // frame_thresh (0.4): requires a stronger sustained note
+            // min_note_len (10): filters out very short anomalous blips
+            const projectedNotes = outputToNotesPoly(frames, onsets, 0.6, 0.4, 10);
+            const timeNotes = noteFramesToTime(projectedNotes);
+            
+            const currentMidis = [...new Set(timeNotes.map(n => Math.round(n.pitchMidi)))];
+            const currentNoteNames = currentMidis.map(midiToNoteName);
 
-              // Sustain Logic
-              if (isSustainEnabled) {
-                currentNoteNames.forEach(n => sustainedNotesRef.current.add(n));
-              } else {
-                sustainedNotesRef.current.clear();
-              }
-
-              const finalNotesToShow = [...new Set([
-                ...currentNoteNames, 
-                ...Array.from(sustainedNotesRef.current),
-                ...Array.from(virtualNotesRef.current)
-              ])];
-              
-              setActiveNotes(finalNotesToShow);
-              setDetectedChord(detectChord(finalNotesToShow));
-
-              // Recording Logic
-              if (isRecording) {
-                const sessionRelativeTime = audioContext.currentTime - sessionStartTime;
-                const newRecordedNotes: RecordedNote[] = timeNotes.map(n => ({
-                  pitchMidi: Math.round(n.pitchMidi),
-                  startTimeSeconds: n.startTimeSeconds + sessionRelativeTime,
-                  durationSeconds: n.durationSeconds,
-                  velocity: 0.8
-                }));
-                
-                setRecordedNotes(prev => [...prev, ...newRecordedNotes]);
-                setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
-              }
-            } finally {
-              isEvaluatingRef.current = false;
+            // Sustain Logic
+            if (isSustainEnabled) {
+              currentNoteNames.forEach(n => sustainedNotesRef.current.add(n));
+            } else {
+              sustainedNotesRef.current.clear();
             }
-          } else {
-            isEvaluatingRef.current = false;
+
+            const finalNotesToShow = [...new Set([
+              ...currentNoteNames, 
+              ...Array.from(sustainedNotesRef.current),
+              ...Array.from(virtualNotesRef.current)
+            ])];
+            
+            setActiveNotes(finalNotesToShow);
+            setDetectedChord(detectChord(finalNotesToShow));
+
+            // Recording Logic
+            if (isRecording) {
+              const sessionRelativeTime = audioContext.currentTime - sessionStartTime;
+              const newRecordedNotes: RecordedNote[] = timeNotes.map(n => ({
+                pitchMidi: Math.round(n.pitchMidi),
+                startTimeSeconds: n.startTimeSeconds + sessionRelativeTime,
+                durationSeconds: n.durationSeconds,
+                velocity: 0.8
+              }));
+              
+              setRecordedNotes(prev => [...prev, ...newRecordedNotes]);
+              setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
+            }
           }
+        } finally {
+          isEvaluatingRef.current = false;
         }
       };
 
