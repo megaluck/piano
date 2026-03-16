@@ -181,19 +181,51 @@ export const useAudioProcessor = () => {
       setError(null);
       const audioContext = new AudioContext({ sampleRate: 22050 });
       audioContextRef.current = audioContext;
+      await audioContext.resume();
 
       const constraints = {
-        audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true
+        audio: {
+          ...(selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : {}),
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        }
       };
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
 
       const source = audioContext.createMediaStreamSource(stream);
+      
+      // Smooth Volume Meter via AnalyserNode
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      
+      const updateVolume = () => {
+        if (!streamRef.current) return;
+        analyser.getByteTimeDomainData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const v = (dataArray[i] - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / dataArray.length);
+        setVolumeLevel(Math.min(1, rms * 4));
+        requestAnimationFrame(updateVolume);
+      };
+      updateVolume();
+
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      
+      // Prevent feedback loop by connecting to a muted GainNode instead of destination
+      const dummyGain = audioContext.createGain();
+      dummyGain.gain.value = 0;
 
       source.connect(processor);
-      processor.connect(audioContext.destination);
+      processor.connect(dummyGain);
+      dummyGain.connect(audioContext.destination);
 
       setIsActive(true);
       const sessionStartTime = audioContext.currentTime;
@@ -202,7 +234,7 @@ export const useAudioProcessor = () => {
       const poolLimit = 8; // Faster response (~1.5s)
 
       processor.onaudioprocess = async (e) => {
-        if (!isActive) return;
+        if (!streamRef.current) return;
         
         const inputData = e.inputBuffer.getChannelData(0);
         audioBufferPool.push(new Float32Array(inputData));
@@ -218,14 +250,6 @@ export const useAudioProcessor = () => {
             combinedBuffer.set(b, offset);
             offset += b.length;
           }
-
-          // Calculate RMS Volume
-          let sumSquares = 0;
-          for (let i = 0; i < combinedBuffer.length; i++) {
-            sumSquares += combinedBuffer[i] * combinedBuffer[i];
-          }
-          const rms = Math.sqrt(sumSquares / combinedBuffer.length);
-          setVolumeLevel(Math.min(1, rms * 4)); // Scale up slightly for better visibility
 
           const audioBuffer = audioContext.createBuffer(1, combinedBuffer.length, audioContext.sampleRate);
           audioBuffer.copyToChannel(combinedBuffer, 0);
@@ -295,7 +319,7 @@ export const useAudioProcessor = () => {
       }
       setIsActive(false);
     }
-  }, [isActive, isSustainEnabled, isRecording, selectedDeviceId]);
+  }, [isSustainEnabled, isRecording, selectedDeviceId]);
 
   return {
     isActive,
