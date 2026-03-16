@@ -64,11 +64,12 @@ export const useAudioProcessor = () => {
   useEffect(() => {
     const loadModel = async () => {
       try {
+        await tf.setBackend('webgl');
         await tf.ready();
         const basicPitch = new BasicPitch(MODEL_URL);
         basicPitchRef.current = basicPitch;
         setIsModelLoading(false);
-        console.log('Basic Pitch model loaded successfully.');
+        console.log('Basic Pitch model loaded successfully with WebGL backend.');
       } catch (err) {
         console.error('Failed to load Basic Pitch model:', err);
         setError('Failed to load detection model. Please check your internet connection.');
@@ -180,7 +181,7 @@ export const useAudioProcessor = () => {
   const startDetection = useCallback(async () => {
     try {
       setError(null);
-      const audioContext = new AudioContext({ sampleRate: 22050 });
+      const audioContext = new AudioContext({ sampleRate: 22050, latencyHint: 'interactive' });
       audioContextRef.current = audioContext;
       await audioContext.resume();
 
@@ -218,7 +219,8 @@ export const useAudioProcessor = () => {
       };
       updateVolume();
 
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      // Reduced buffer size for lower latency (from 4096 to 2048)
+      const processor = audioContext.createScriptProcessor(2048, 1, 1);
       
       // Prevent feedback loop by connecting to a muted GainNode instead of destination
       const dummyGain = audioContext.createGain();
