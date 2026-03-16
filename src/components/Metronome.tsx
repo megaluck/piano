@@ -33,15 +33,21 @@ const Metronome: React.FC<MetronomeProps> = ({ bpm, setBpm }) => {
     osc.stop(time + 0.1);
   }, [isMuted]);
 
-  const scheduler = useCallback(() => {
-    if (!audioContextRef.current) return;
+  const schedulerRef = useRef<(() => void) | null>(null);
+  
+  useEffect(() => {
+    schedulerRef.current = () => {
+      if (!audioContextRef.current) return;
 
-    while (nextNoteTimeRef.current < audioContextRef.current.currentTime + scheduleAheadTime) {
-      playClick(nextNoteTimeRef.current);
-      const secondsPerBeat = 60.0 / bpm;
-      nextNoteTimeRef.current += secondsPerBeat;
-    }
-    timerIDRef.current = window.setTimeout(scheduler, lookahead);
+      while (nextNoteTimeRef.current < audioContextRef.current.currentTime + scheduleAheadTime) {
+        playClick(nextNoteTimeRef.current);
+        const secondsPerBeat = 60.0 / bpm;
+        nextNoteTimeRef.current += secondsPerBeat;
+      }
+      timerIDRef.current = window.setTimeout(() => {
+        if (schedulerRef.current) schedulerRef.current();
+      }, lookahead);
+    };
   }, [bpm, playClick]);
 
   const toggleMetronome = () => {
@@ -50,7 +56,7 @@ const Metronome: React.FC<MetronomeProps> = ({ bpm, setBpm }) => {
         audioContextRef.current = new AudioContext();
       }
       nextNoteTimeRef.current = audioContextRef.current.currentTime;
-      scheduler();
+      if (schedulerRef.current) schedulerRef.current();
       setIsPlaying(true);
     } else {
       if (timerIDRef.current) {
